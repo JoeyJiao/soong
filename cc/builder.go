@@ -20,6 +20,7 @@ package cc
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -415,12 +416,25 @@ func TransformSourceToObj(ctx android.ModuleContext, subdir string, srcFiles and
 			continue
 		}
 
+		if strings.Contains(cflags, "-AFL_MODE=1") {
+			if os.Getenv("HOST_OUT") == "" {
+				os.Setenv("HOST_OUT", "out/host/linux-x86")
+			}
+		}
 		if flags.clang {
 			switch ccCmd {
 			case "gcc":
-				ccCmd = "clang"
+				if strings.Contains(cflags, "-AFL_MODE=1") {
+					ccCmd = "afl-clang-fast"
+				} else {
+					ccCmd = "clang"
+				}
 			case "g++":
-				ccCmd = "clang++"
+				if strings.Contains(cflags, "-AFL_MODE=1") {
+					ccCmd = "afl-clang-fast++"
+				} else {
+					ccCmd = "clang++"
+				}
 			default:
 				panic("unrecoginzied ccCmd")
 			}
@@ -429,7 +443,11 @@ func TransformSourceToObj(ctx android.ModuleContext, subdir string, srcFiles and
 		ccDesc := ccCmd
 
 		if flags.clang {
-			ccCmd = "${config.ClangBin}/" + ccCmd
+			if strings.Contains(cflags, "-AFL_MODE=1") {
+				ccCmd = os.Getenv("HOST_OUT") + "/bin/" + ccCmd
+			} else {
+				ccCmd = "${config.ClangBin}/" + ccCmd
+			}
 		} else {
 			ccCmd = gccCmd(flags.toolchain, ccCmd)
 		}
@@ -619,6 +637,13 @@ func TransformObjToDynamicBinary(ctx android.ModuleContext,
 
 	var ldCmd string
 	if flags.clang {
+		if strings.Contains(flags.cFlags, "-AFL_MODE=1") {
+			if strings.Contains(flags.cFlags, "-target i686-linux-android") {
+				flags.ldFlags = flags.ldFlags + " " + os.Getenv("HOST_OUT") + "/afl/afl-llvm-rt-32.o"
+			} else {
+				flags.ldFlags = flags.ldFlags + " " + os.Getenv("HOST_OUT") + "/afl/afl-llvm-rt-64.o"
+			}
+		}
 		ldCmd = "${config.ClangBin}/clang++"
 	} else {
 		ldCmd = gccCmd(flags.toolchain, "g++")
